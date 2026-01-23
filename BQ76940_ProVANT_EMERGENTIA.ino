@@ -150,6 +150,7 @@ void loop()
 
 
  Serial.println("sempre sempre a testar");
+ /*
  delay(1000);
  
  if(millis() - lastTime > 3000)
@@ -163,6 +164,29 @@ void loop()
  for(int i = 0 ; i < NUMBER_OF_CELLS+1 ; i++){
       Serial.println(cellVoltage[i]);
     }
+    */
+
+  byte a = registerRead(bq796x0_SYS_STAT);
+  byte ov = a & bq796x0_OV;
+  if (ov != 0)
+    Serial.println("Overvoltage detected !!!!!!");
+
+  byte uv = a & bq796x0_UV;
+  if (uv != 0)
+    Serial.println("Undervoltage detected !!!!!!");
+
+  if (a & bq796x0_SCD){
+    Serial.println("Short circuit on discharge !!!!!!");
+    registerWrite(bq796x0_SYS_STAT, 0);
+    registerRead(bq796x0_SYS_STAT);
+  }
+
+  byte cc = registerRead(bq796x0_SYS_CTRL2);
+  if (!(cc & bq796x0_CC_EN))
+    registerWrite(bq796x0_SYS_CTRL2, cc | bq796x0_CC_EN);
+
+  Serial.println("Novo valor de CC:");
+  registerRead(bq796x0_SYS_CTRL2);
 
 /*int temp = readTemp(1);
 Serial.print("Die temp = ");
@@ -220,13 +244,17 @@ boolean initBQ(byte irqPin)
     Serial.println("ADC Already Enabled");
   }
   sysVal |= bq796x0_ADC_EN; //Set the ADC_EN bit
-  registerWrite(bq796x0_SYS_CTRL1, sysVal); //address, value
+  if (!registerWrite(bq796x0_SYS_CTRL1, sysVal))
+    Serial.println("Erro ao escrever no registrador do ADC"); //address, value
 
+  Serial.println("Coulomb counter");
   //Enable countinous reading of the Coulomb Counter
   sysVal = registerRead(bq796x0_SYS_CTRL2);
   sysVal |= bq796x0_CC_EN; //Set the CC_EN bit
-  registerWrite(bq796x0_SYS_CTRL2, sysVal); //address, value
-  //Serial.println("Coulomb counter enabled");
+  if (!registerWrite(bq796x0_SYS_CTRL2, sysVal))
+    Serial.println("Erro para ativar o CC"); //address, value
+  sysVal = registerRead(bq796x0_SYS_CTRL2);
+  Serial.println("Coulomb counter enabled");
 
   //Attach interrupt
   pinMode(irqPin, INPUT); //No pull up
@@ -400,8 +428,9 @@ void writeOVtrip(float tripVoltage)
 //Example: voltage = (6,512 * 0.370) + 56mV = 2.465V
 float readUVtrip(void)
 {
-  int trip = registerRead(bq796x0_UV_TRIP);
+  byte reg = registerRead(bq796x0_UV_TRIP);
 
+  uint16_t trip = (uint16_t)reg;
   trip <<= 4; //Shuffle the bits to align to 0b.01.XXXX.XXXX.0000
   trip |= 0x1000;
 
@@ -482,49 +511,47 @@ byte registerRead(byte regAddress) {
 
 //-------------------------------------------------------- Read from a register function end ----------------------------------------------------------- //
 
+//-------------------------------------------------------- CRC calculation funcion  ----------------------------------------------------------- //
+//The BQ7694001 demands a CRC at the last byte in a write transmission
+byte calculateCRC(byte data_buffer[], byte len)
+{
+  byte crc = 0;
+  for (byte i = 0; i < len; i++) {
+    crc ^= data_buffer[i];
+    for (byte j = 0; j < 8; j++) {
+      if (crc & 0x80) {
+        crc = (crc << 1) ^ 0x07;
+      } else {
+        crc <<= 1;
+      }
+    }
+  }
+  return crc;
+}
 
+//-------------------------------------------------------- CRC calculation funcion end ----------------------------------------------------------- //
 
 //-------------------------------------------------------- Write in a register function  ----------------------------------------------------------- //
 //Write a given value to a given register
-bool registerWrite(byte regAddress, byte regData) {
-
-
-  // Primeira transmissão: envia apenas o endereço do registrador
-  Wire.beginTransmission(bqI2CAddress);
-  Wire.write(regAddress);
-  byte error = Wire.endTransmission(false); // Mantém a conexão aberta
+bool registerWrite(byte regAddress, byte regData){
+  // O CRC é calculado sobre: Endereço I2C (com bit de escrita) + Reg Address + Dado
+  byte i2cWriteAddr = (bqI2CAddress << 1) | 0; // Endereço de 8 bits para escrita
+  byte dataForCRC[3] = {i2cWriteAddr, regAddress, regData};
   
-  if (error != 0) {
-    Serial.print("Erro na pré-transmissão da estapa de escrita. Codigo do erro: ");
-    Serial.println(error);
-    return false;
-  }
+  byte crcValue = calculateCRC(dataForCRC, 3);
 
-  // Segunda transmissão: envia endereço + dado
   Wire.beginTransmission(bqI2CAddress);
   Wire.write(regAddress);
   Wire.write(regData);
-  error = Wire.endTransmission(); // Envia STOP condition
-  
-  if (error != 0) {
-    Serial.print("Erro na escrita: ");
-    Serial.println(error);
-    return false;
-  }
+  Wire.write(crcValue); // Envia o CRC calculado
+  byte error = Wire.endTransmission();
 
-  Serial.print("Escrito 0x");
-  Serial.print(regData, HEX);
-  Serial.print(" no registrador 0x");
-  Serial.println(regAddress, HEX);
-  
+  if (error != 0) return false;
   return true;
 }
-
-
+}
 
 //-------------------------------------------------------- Write in a register function end  ----------------------------------------------------------- //
-
-
 
 
 //-------------------------------------------------------- interrupt function  ----------------------------------------------------------- //
@@ -755,4 +782,4 @@ int thermistorLookup(float resistance)
   return(temp);  
 }
 
-//-------------------------------------------------------- Read the temperature function end  ---------------------------------------------------------- //
+//-------------------------------------------------------- Read the temperature function end  ---------------------------------------------------------- //
