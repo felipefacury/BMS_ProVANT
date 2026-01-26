@@ -14,7 +14,15 @@
 // ----------------------------------------- INCLUDES END  ------------------------------------------------ //
 
 
+#define DEBUG
 
+#ifdef DEBUG
+  #define DEBUG_PRINTLN Serial.println
+  #define DEBUG_PRINT Serial.print
+#else
+  #define DEBUG_PRINT
+  #define DEBUG_PRINTLN
+#endif
 
 
 
@@ -78,6 +86,41 @@
 
 // ----------------------------------------- DEFINITIONS END  ------------------------------------------------ //
 
+// ----------------------------------------- FUNCTIONS PROTOTYPES ------------------------------------------------ //
+
+boolean initBQ(byte irqPin);
+
+byte registerRead(byte regAddress);
+
+bool registerWrite(byte regAddress, byte regData);
+int registerDoubleRead(byte regAddress);
+byte calculateCRC(byte data_buffer[], byte len);
+
+int readGAIN(void);
+int readADCoffset(void);
+
+byte tripCalculator(float tripVoltage);
+float readOVtrip(void);
+void writeOVtrip(float tripVoltage);
+float readUVtrip(void);
+void writeUVtrip(float tripVoltage);
+
+float readCellVoltage(byte cellNumber);
+
+int thermistorLookup(float resistance);
+int readTemp(byte thermistorNumber);
+
+float calcVoltage(unsigned rawValue);
+
+void bq769x0IRQ();
+// ----------------------------------------- FUNCTIONS PROTOTYPES END  ------------------------------------------------ //
+
+//OV integer value must range 8200-12280
+//UV integer value must range 4096-8176
+const unsigned max_OV_tripValue = 12280;
+const unsigned max_UV_tripValue = 8176;
+const unsigned min_OV_tripValue = 8200;
+const unsigned min_UV_tripValue = 4096;
 
 //The bq769x0 without CRC has the address 0x08 (section 5 "Device Comparison Table")
 
@@ -150,7 +193,7 @@ void loop()
 
 
  Serial.println("sempre sempre a testar");
- /*
+ 
  delay(1000);
  
  if(millis() - lastTime > 3000)
@@ -164,8 +207,9 @@ void loop()
  for(int i = 0 ; i < NUMBER_OF_CELLS+1 ; i++){
       Serial.println(cellVoltage[i]);
     }
-    */
+    
 
+  /*
   byte a = registerRead(bq796x0_SYS_STAT);
   byte ov = a & bq796x0_OV;
   if (ov != 0)
@@ -182,11 +226,13 @@ void loop()
   }
 
   byte cc = registerRead(bq796x0_SYS_CTRL2);
-  if (!(cc & bq796x0_CC_EN))
+  if (!(cc & bq796x0_CC_EN)){
     registerWrite(bq796x0_SYS_CTRL2, cc | bq796x0_CC_EN);
+    Serial.println("Novo valor de CC:");
+    registerRead(bq796x0_SYS_CTRL2);
+  }
 
-  Serial.println("Novo valor de CC:");
-  registerRead(bq796x0_SYS_CTRL2);
+*/
 
 /*int temp = readTemp(1);
 Serial.print("Die temp = ");
@@ -237,6 +283,7 @@ boolean initBQ(byte irqPin)
   registerWrite(bq796x0_CC_CFG, 0x19); //address, value
 
 
+  DEBUG_PRINTLN("// Testing ADC \\");
   //Double check that ADC is enabled
   byte sysVal = registerRead(bq796x0_SYS_CTRL1);
   if(sysVal & bq796x0_ADC_EN)
@@ -247,7 +294,9 @@ boolean initBQ(byte irqPin)
   if (!registerWrite(bq796x0_SYS_CTRL1, sysVal))
     Serial.println("Erro ao escrever no registrador do ADC"); //address, value
 
-  Serial.println("Coulomb counter");
+  DEBUG_PRINTLN();
+
+  DEBUG_PRINTLN("// Coulomb Counter \\");
   //Enable countinous reading of the Coulomb Counter
   sysVal = registerRead(bq796x0_SYS_CTRL2);
   sysVal |= bq796x0_CC_EN; //Set the CC_EN bit
@@ -255,6 +304,8 @@ boolean initBQ(byte irqPin)
     Serial.println("Erro para ativar o CC"); //address, value
   sysVal = registerRead(bq796x0_SYS_CTRL2);
   Serial.println("Coulomb counter enabled");
+
+  DEBUG_PRINTLN();
 
   //Attach interrupt
   pinMode(irqPin, INPUT); //No pull up
@@ -268,6 +319,7 @@ boolean initBQ(byte irqPin)
   else
     Serial.println("irqPin invalid. Alert IRQ not enabled.");
 
+  DEBUG_PRINTLN("// Gain and Offset \\");
   //Gain and offset are used in multiple functions
   //Read these values into global variables
   gain = readGAIN() / (float)1000; //Gain is in uV so this converts it to mV. Example: 0.370mV/LSB
@@ -275,11 +327,13 @@ boolean initBQ(byte irqPin)
 
   Serial.print("gain: ");
   Serial.print(gain);
-  Serial.println("uV/LSB");
+  Serial.println("mV/LSB");
 
   Serial.print("offset: ");
   Serial.print(offset);
   Serial.println("mV");
+
+  DEBUG_PRINTLN();
 
   //Read the system status register
   byte sysStat = registerRead(bq796x0_SYS_STAT);
@@ -298,6 +352,7 @@ boolean initBQ(byte irqPin)
     }
   }
 
+  DEBUG_PRINTLN("// Trip voltages \\");
   //Set any other settings such as OVTrip and UVTrip limits
   float under = readUVtrip();
   float over = readOVtrip();
@@ -310,9 +365,9 @@ boolean initBQ(byte irqPin)
   Serial.print(over);
   Serial.println("V");
 
-  if(under != 3.32)
+  if(under != 3.13)
   {
-    writeUVtrip(3.32); //Set undervoltage to 3.32V
+    writeUVtrip(3.13); //Set undervoltage to 3.32V
     Serial.print("New undervoltage trip: ");
     Serial.print(readUVtrip());
     Serial.println("V"); //should print 3.32V
@@ -326,6 +381,7 @@ boolean initBQ(byte irqPin)
     Serial.println("V"); //should print 4.27V
   }
 
+  DEBUG_PRINTLN();
   return true;
 }
 
@@ -408,6 +464,12 @@ float readOVtrip(void)
 //11,200 = 0x2BC0 = 
 void writeOVtrip(float tripVoltage)
 {
+
+  if ((tripVoltage < (calcVoltage(min_OV_tripValue)/1000)) || (tripVoltage > (calcVoltage(max_OV_tripValue)/1000))){
+
+    return;
+  }
+
   byte val = tripCalculator(tripVoltage); //Convert voltage to an 8-bit middle value
   registerWrite(bq796x0_OV_TRIP, val); //address, value
 }
@@ -453,6 +515,9 @@ float readUVtrip(void)
 //Given a voltage (2.85V for example), set the under voltage trip register
 void writeUVtrip(float tripVoltage)
 {
+  if ((tripVoltage < (calcVoltage(min_UV_tripValue)/1000)) || (tripVoltage > (calcVoltage(max_UV_tripValue)/1000)))
+    return;
+
   byte val = tripCalculator(tripVoltage); //Convert voltage to an 8-bit middle value
   registerWrite(bq796x0_UV_TRIP, val); //address, value
 }
@@ -511,25 +576,6 @@ byte registerRead(byte regAddress) {
 
 //-------------------------------------------------------- Read from a register function end ----------------------------------------------------------- //
 
-//-------------------------------------------------------- CRC calculation funcion  ----------------------------------------------------------- //
-//The BQ7694001 demands a CRC at the last byte in a write transmission
-byte calculateCRC(byte data_buffer[], byte len)
-{
-  byte crc = 0;
-  for (byte i = 0; i < len; i++) {
-    crc ^= data_buffer[i];
-    for (byte j = 0; j < 8; j++) {
-      if (crc & 0x80) {
-        crc = (crc << 1) ^ 0x07;
-      } else {
-        crc <<= 1;
-      }
-    }
-  }
-  return crc;
-}
-
-//-------------------------------------------------------- CRC calculation funcion end ----------------------------------------------------------- //
 
 //-------------------------------------------------------- Write in a register function  ----------------------------------------------------------- //
 //Write a given value to a given register
@@ -547,8 +593,31 @@ bool registerWrite(byte regAddress, byte regData){
   byte error = Wire.endTransmission();
 
   if (error != 0) return false;
+
+  Serial.print("Valor escrito no registrador 0x");
+  Serial.print(regAddress, HEX);
+  Serial.print(": 0x");
+  Serial.println(regData, HEX);
+
   return true;
 }
+
+
+//The BQ7694001 demands a CRC at the last byte in a write transmission
+byte calculateCRC(byte data_buffer[], byte len)
+{
+  byte crc = 0;
+  for (byte i = 0; i < len; i++) {
+    crc ^= data_buffer[i];
+    for (byte j = 0; j < 8; j++) {
+      if (crc & 0x80) {
+        crc = (crc << 1) ^ 0x07;
+      } else {
+        crc <<= 1;
+      }
+    }
+  }
+  return crc;
 }
 
 //-------------------------------------------------------- Write in a register function end  ----------------------------------------------------------- //
@@ -576,8 +645,11 @@ void bq769x0IRQ()
 //Given a voltage this function uses gain and offset to get a 14 bit value
 //Then strips that value down to the middle-ish 8-bits
 //No registers are written, that's up to the caller
+//OV integer value must range 8200-12280
+//UV integer value must range 4096-8176
 byte tripCalculator(float tripVoltage)
 {
+
   tripVoltage *= 1000; //Convert volts to mV
 
   //Serial.print("tripVoltage to be: ");
@@ -586,7 +658,9 @@ byte tripCalculator(float tripVoltage)
   tripVoltage -= offset;
   tripVoltage /= gain;
 
+
   int tripValue = (int)tripVoltage; //We only want the integer - drop decimal portion.
+
 
   //Serial.print("tripValue should be something like 0x2BC0: ");
   //Serial.println(tripValue, HEX);
@@ -596,6 +670,7 @@ byte tripCalculator(float tripVoltage)
 
   //Serial.print("About to report tripValue: ");
   //Serial.println(tripValue, HEX);
+
 
   return(tripValue);
 }
@@ -641,6 +716,14 @@ int registerDoubleRead(byte regAddress)
 
 //-------------------------------------------------------- Double register read function end (aux function)  ----------------------------------------------------------- //
 
+
+//-------------------------------------------------------- Calculate Voltage (aux function)  ----------------------------------------------------------- //
+//Return the real voltage in mv
+inline float calcVoltage(unsigned rawValue){
+  return gain*rawValue+offset;
+}
+
+//-------------------------------------------------------- Calculate Voltage (aux function)  ----------------------------------------------------------- //
 
 //-------------------------------------------------------- Read the voltage of a cell function begin ---------------------------------------------------------- //
 
