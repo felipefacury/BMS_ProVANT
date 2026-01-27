@@ -84,6 +84,12 @@
 #define bq796x0_DSG_ON 1<<1
 #define bq796x0_CHG_ON 1<<0
 
+//Bit operations
+#define setBit(reg, mask) (reg |= mask)
+#define resetBit(reg, mask) (reg &= ~mask)
+#define toggleBit(reg, mask) (reg ^= mask)
+#define testBit(reg, mask) (reg & mask)
+
 // ----------------------------------------- DEFINITIONS END  ------------------------------------------------ //
 
 // ----------------------------------------- FUNCTIONS PROTOTYPES ------------------------------------------------ //
@@ -195,7 +201,9 @@ void loop()
  Serial.println("sempre sempre a testar");
  
  delay(1000);
+
  
+ /*
  if(millis() - lastTime > 3000)
   {
     for(int i = 0 ; i < NUMBER_OF_CELLS+1 ; i++){
@@ -208,8 +216,8 @@ void loop()
       Serial.println(cellVoltage[i]);
     }
     
+*/
 
-  /*
   byte a = registerRead(bq796x0_SYS_STAT);
   byte ov = a & bq796x0_OV;
   if (ov != 0)
@@ -221,7 +229,7 @@ void loop()
 
   if (a & bq796x0_SCD){
     Serial.println("Short circuit on discharge !!!!!!");
-    registerWrite(bq796x0_SYS_STAT, 0);
+    registerWrite(bq796x0_SYS_STAT, a | bq796x0_SCD);
     registerRead(bq796x0_SYS_STAT);
   }
 
@@ -232,7 +240,18 @@ void loop()
     registerRead(bq796x0_SYS_CTRL2);
   }
 
-*/
+  cc = registerRead(bq796x0_SYS_CTRL2);
+  if (testBit(cc, bq796x0_DSG_ON)){
+    toggleBit(cc, bq796x0_DSG_ON);
+    registerWrite(bq796x0_SYS_CTRL2, cc);
+  }
+
+  cc = registerRead(bq796x0_SYS_CTRL2);
+  if (testBit(cc, bq796x0_CHG_ON)){
+    toggleBit(cc, bq796x0_CHG_ON);
+    registerWrite(bq796x0_SYS_CTRL2, cc);
+  }
+
 
 /*int temp = readTemp(1);
 Serial.print("Die temp = ");
