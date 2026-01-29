@@ -71,6 +71,7 @@ void setup()
   }
   
   lastTime = millis();
+
  
 }
 
@@ -106,6 +107,10 @@ void loop()
     bq->resetSysStatBit(bq796x0_UV);
   }
 
+  bq->readCurrent();
+  //Serial.println(bq->getCurrent());
+
+  bq->setCConeshot();
   
   // byte a = registerRead(bq796x0_SYS_STAT);
   // byte ov = a & bq796x0_OV;

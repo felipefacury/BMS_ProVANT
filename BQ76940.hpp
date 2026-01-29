@@ -50,9 +50,14 @@ class BQ76940{
 
     void readCurrent();
 
-
+    
 
     float getCurrent();
+
+
+
+
+    void setCConeshot();
 
 };
 

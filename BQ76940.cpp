@@ -1,3 +1,4 @@
+#include "SerialUSB.h"
 #include "Arduino.h"
 #include "BQ76940.hpp"
 
@@ -138,6 +139,9 @@ bool BQ76940::initBQ(byte irqPin)
     DEBUG_PRINT1(readOVtrip());
     DEBUG_PRINTLN1("V"); //should print 4.27V
   }
+
+  //Ressetting SYS_STAT
+  driver->registerWrite(bq796x0_SYS_STAT, driver->registerRead(bq796x0_SYS_STAT));
 
   DEBUG_PRINT1("\n");
   return true;
@@ -482,6 +486,16 @@ int BQ76940::thermistorLookup(float resistance)
 
 //-------------------------------------------------------- Read the current begin  ---------------------------------------------------------- //
 
+void BQ76940::setCConeshot(){
+  byte buff = driver->registerRead(bq796x0_SYS_CTRL2);
+
+  resetBit(buff, bq796x0_CC_EN);
+  setBit(buff, bq796x0_CC_ONESHOT);
+
+  driver->registerWrite(bq796x0_SYS_CTRL2, buff);
+}
+
+
 void BQ76940::readCurrent()
 {
   if (!bq769x0_IRQ_Triggered) return;
@@ -494,10 +508,17 @@ void BQ76940::readCurrent()
     bq769x0_IRQ_Triggered = false;
 
   int16_t rawVoltage = (int16_t)driver->registerDoubleRead(bq796x0_CC_HI);
+  Serial.print("Raw voltage: ");
+  Serial.println(rawVoltage, HEX);
 
-  float shuntVoltage = rawVoltage * ((float)8.44/1000);
+  float shuntVoltage = rawVoltage * ((float)8.44/1000); // uV -> mV
+  Serial.print("Shunt voltage: ");
+  Serial.println(shuntVoltage);
 
-  this->current = shuntVoltage/(shunt/(float)1000);
+
+  this->current = shuntVoltage/(shunt/(float)1000); //mA
+  Serial.print("Current: ");
+  Serial.println(this->current);
 }
 
 //-------------------------------------------------------- Read the current begin  ---------------------------------------------------------- //
