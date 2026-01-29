@@ -530,7 +530,32 @@ float BQ76940::getCurrent(){
   return this->current;
 }
 
+byte BQ76940::getOCtrip()
+{
+  return 0x0F & driver->registerRead(bq796x0_PROTECT2); // Return only the 4 last bits
+}
+
+byte BQ76940::getSCtrip()
+{
+  return 0x07 & driver->registerRead(bq796x0_PROTECT1); // Return only the last 3 last bits
+}
+
+byte  BQ76940::getOCdelay()
+{
+  return 0x07 & (driver->registerRead(bq796x0_PROTECT2) >> 4); // Return bits 6, 5 and 4 
+}
+
+byte BQ76940::getSCdelay()
+{
+  return 0x07 & (driver->registerRead(bq796x0_PROTECT2) >> 3); // Return bits 5, 4 and 3 
+}
+
 //-------------------------------------------------------- get methods end  ---------------------------------------------------------- //
+
+
+//-------------------------------------------------------- set methods begin  ---------------------------------------------------------- //
+
+//-------------------------------------------------------- set methods end  ---------------------------------------------------------- //
 
 //-------------------------------------------------------- interrupt function  ----------------------------------------------------------- //
 

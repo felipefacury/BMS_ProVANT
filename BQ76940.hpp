@@ -53,8 +53,16 @@ class BQ76940{
     
 
     float getCurrent();
+    byte getOCtrip();
+    byte getSCtrip();
+    byte getOCdelay();
+    byte getSCdelay();
 
 
+    void setOCtrip(byte threshold);
+    void setSCtrip(byte threshold);
+    void setOCdelay(byte delay);
+    void setSCdelay(byte delay);
 
 
     void setCConeshot();
