@@ -24,7 +24,7 @@
 class CommDriver {
   private:
     //The bq769x0 without CRC has the address 0x08 (section 5 "Device Comparison Table")
-    int bqI2CAddress = 0x08; //7-bit I2C address
+    const uint8_t bqI2CAddress = 0x08; //7-bit I2C address
 
     /**
     * @brief Write a byte inside a register at the BQ7694
@@ -62,7 +62,7 @@ class CommDriver {
 
     * @return Integer with the 2 bytes read already combined 
     */
-    int registerDoubleRead(byte regAddress);
+    uint16_t registerDoubleRead(byte regAddress);
 
     /**
     * @brief Write a byte inside a register at the BQ7694

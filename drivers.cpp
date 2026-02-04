@@ -108,7 +108,7 @@ byte CommDriver::calculateCRC(byte data_buffer[], byte len)
 //-------------------------------------------------------- Double register read function begin (aux function)  ----------------------------------------------------------- //
 
 //Returns the atmoic int from two sequentials reads
-int CommDriver::registerDoubleRead(byte regAddress)
+uint16_t CommDriver::registerDoubleRead(byte regAddress)
 {
   WIRE.beginTransmission(bqI2CAddress);
   WIRE.write(regAddress);
@@ -134,7 +134,7 @@ int CommDriver::registerDoubleRead(byte regAddress)
   DEBUG_PRINT1("): 0x");
   DEBUG_PRINTLN2(reg2, HEX);
 
-  int combined = (int)reg1 << 8;
+  uint16_t combined = (uint16_t)reg1 << 8;
   combined |= reg2;
 
   return(combined);

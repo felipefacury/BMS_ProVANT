@@ -4,7 +4,7 @@
 #include "Arduino.h"
 
 
-constexpr uint16_t shunt = 10; // miliOhm
+const uint16_t shunt = 10; // miliOhm
 
 
 
@@ -92,10 +92,158 @@ constexpr uint16_t shunt = 10; // miliOhm
 // ----------------------------------------- DEFINITIONS END  ------------------------------------------------ //
 
 
+// ----------------------------------------- ENUMERATIONS BEGIN  ------------------------------------------------ //
+
+enum class OCdelay : byte {
+  OCD_8ms,
+  OCD_20ms,
+  OCD_40ms,
+  OCD_80ms,
+  OCD_160ms,
+  OCD_320ms,
+  OCD_640ms,
+  OCD_1280ms
+};
+
+inline int operator<<(OCdelay valor, int shift) {
+    return static_cast<int>(static_cast<byte>(valor)) << shift;
+}
+
+inline uint8_t operator!=(uint8_t val, OCdelay e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, OCdelay e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+
+enum class OCthresh : byte {
+  OCT_8mv,
+  OCT_11mv,
+  OCT_14mv,
+  OCT_17mv,
+  OCT_19mv,
+  OCT_22mv,
+  OCT_25mv,
+  OCT_28mv,
+  OCT_31mv,
+  OCT_33mv
+};
+
+
+
+inline uint8_t& operator|=(uint8_t& val, OCthresh e) {
+
+    val = val | static_cast<uint8_t>(e);
+
+    return val;
+}
+
+inline uint8_t operator!=(uint8_t val, OCthresh e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, OCthresh e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+
+
+enum class SCthresh : byte {
+  SCT_22mv,
+  SCT_33mv,
+  SCT_44mv,
+  SCT_56mv,
+  SCT_67mv,
+  SCT_78mv,
+  SCT_89mv,
+  SCT_100mv
+};
+
+inline uint8_t& operator|=(uint8_t& val, SCthresh e) {
+
+    val = val | static_cast<uint8_t>(e);
+
+    return val;
+}
+
+inline uint8_t operator!=(uint8_t val, SCthresh e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, SCthresh e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+
+
+enum class SCdelay : byte{
+  SCD_70us,
+  SCD_100us,
+  SCD_200us,
+  SCD_400us
+};
+
+inline int operator<<(SCdelay valor, int shift) {
+    return static_cast<int>(static_cast<byte>(valor)) << shift;
+}
+
+inline uint8_t operator!=(uint8_t val, SCdelay e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, SCdelay e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+enum class OVdelay : byte{
+  OVD_1s,
+  OVD_2s,
+  OVD_4s,
+  OVD_8s
+};
+
+inline int operator<<(OVdelay valor, int shift) {
+    return static_cast<int>(static_cast<byte>(valor)) << shift;
+}
+
+inline uint8_t operator!=(uint8_t val, OVdelay e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, OVdelay e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+enum class UVdelay : byte{
+  UVD_1s,
+  UVD_4s,
+  UVD_8s,
+  UVD_16s
+};
+
+inline int operator<<(UVdelay valor, int shift) {
+    return static_cast<int>(static_cast<byte>(valor)) << shift;
+}
+
+inline uint8_t operator!=(uint8_t val, UVdelay e) {
+    return val != static_cast<uint8_t>(e);
+}
+
+inline uint8_t operator==(uint8_t val, UVdelay e) {
+    return val == static_cast<uint8_t>(e);
+}
+
+// ----------------------------------------- ENUMERATIONS END  ------------------------------------------------ //
+
+
 //Max number of ms before timeout error. 100 is pretty good
 #define MAX_I2C_TIME 100
 
 // ProVant-EMERGENTIA pack has a 12 cell lipo that runs at 48V:
 #define NUMBER_OF_CELLS 15 // Although ProVant Emergentia has only 12 cells, all the IC pins are required in order to operate properly. On the readings, ignore cells 4, 9 and 14, they are short circuited.
+
+#define CELLS_IN_USE 12
 
 #endif

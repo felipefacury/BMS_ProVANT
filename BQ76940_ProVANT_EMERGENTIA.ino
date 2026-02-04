@@ -59,7 +59,7 @@ void setup()
   pinMode(statLED, OUTPUT);
   digitalWrite(statLED, LOW); //Turn off the LED for now
 
-  if(bq->initBQ(21) == false)
+  if(bq->initBQ(21, SCthresh::SCT_33mv, SCdelay::SCD_70us, OCthresh::OCT_8mv, OCdelay::OCD_8ms, OVdelay::OVD_1s, UVdelay::UVD_1s, 4.27, 3.13) == false)
   {
     DEBUG_PRINTLN1("bq76940 failed to respond - check your wiring");
     DEBUG_PRINTLN1("Hanging.");
@@ -107,44 +107,20 @@ void loop()
     bq->resetSysStatBit(bq796x0_UV);
   }
 
-  bq->readCurrent();
-  //Serial.println(bq->getCurrent());
+  bq->test();
+  bq->setRSNNS(1);
 
-  bq->setCConeshot();
+  delay(2000);
+
+  bq->test();
+  bq->setRSNNS(0);
+
+
+
+  Serial.print("Battery Pack voltage: ");
+  Serial.printf("%.2f", bq->getBatteryPack()/1000);
+  Serial.println("V");
   
-  // byte a = registerRead(bq796x0_SYS_STAT);
-  // byte ov = a & bq796x0_OV;
-  // if (ov != 0)
-  //   DEBUG_PRINTLN("Overvoltage detected !!!!!!");
-
-  // byte uv = a & bq796x0_UV;
-  // if (uv != 0)
-  //   DEBUG_PRINTLN("Undervoltage detected !!!!!!");
-
-  // if (a & bq796x0_SCD){
-  //   DEBUG_PRINTLN("Short circuit on discharge !!!!!!");
-  //   registerWrite(bq796x0_SYS_STAT, a | bq796x0_SCD);
-  //   registerRead(bq796x0_SYS_STAT);
-  // }
-
-  // byte cc = registerRead(bq796x0_SYS_CTRL2);
-  // if (!(cc & bq796x0_CC_EN)){
-  //   registerWrite(bq796x0_SYS_CTRL2, cc | bq796x0_CC_EN);
-  //   DEBUG_PRINTLN("Novo valor de CC:");
-  //   registerRead(bq796x0_SYS_CTRL2);
-  // }
-
-  // cc = registerRead(bq796x0_SYS_CTRL2);
-  // if (testBit(cc, bq796x0_DSG_ON)){
-  //   toggleBit(cc, bq796x0_DSG_ON);
-  //   registerWrite(bq796x0_SYS_CTRL2, cc);
-  // }
-
-  // cc = registerRead(bq796x0_SYS_CTRL2);
-  // if (testBit(cc, bq796x0_CHG_ON)){
-  //   toggleBit(cc, bq796x0_CHG_ON);
-  //   registerWrite(bq796x0_SYS_CTRL2, cc);
-  // }
 
 
 /*int temp = readTemp(1);

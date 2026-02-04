@@ -1,8 +1,10 @@
+#include <sys/_types.h>
 #include "SerialUSB.h"
 #include "Arduino.h"
 #include "BQ76940.hpp"
 
 extern volatile boolean bq769x0_IRQ_Triggered;
+extern float cellVoltage[NUMBER_OF_CELLS + 1];
 
 
 byte BQ76940::readSysStat(){
@@ -22,9 +24,12 @@ BQ76940::BQ76940(pin_size_t SDA, pin_size_t SCL)
   this->current = 0;
 }
   
-bool BQ76940::initBQ(byte irqPin)
+bool BQ76940::initBQ(byte irqPin, SCthresh sct, SCdelay scd, OCthresh oct, OCdelay ocd, OVdelay ovd, UVdelay uvd, float ovTrip, float uvTrip)
 {
-  //Test to see if we have correct I2C communication
+
+  
+  // ------------------------------ Test to see if we have correct I2C communication --------------------------------------//
+
   byte testByte = driver->registerRead(bq796x0_ADCGAIN2); // This reading is used only to check if the read value is plausible, it should be something other than zero on POR.
 
   for(byte x = 0 ; x < 10 && testByte == 0 ; x++)
@@ -36,11 +41,17 @@ bool BQ76940::initBQ(byte irqPin)
   
   if(testByte == 0x00) return false; //Something is very wrong. Check wiring.
 
+
+
+  // ------------------------------ Set CC_CFG to 0x19 --------------------------------------//
+
   //"For optimal performance, [CC_CFG] should be programmed to 0x19 upon device startup." page 40
   driver->registerWrite(bq796x0_CC_CFG, 0x19); //address, value
 
 
-  DEBUG_PRINTLN1("// Testing ADC \\");
+  // ------------------------------ Enabling ADC --------------------------------------//
+
+  DEBUG_PRINTLN1("// Testing ADC \\\\");
   //Double check that ADC is enabled
   byte sysVal = driver->registerRead(bq796x0_SYS_CTRL1);
   if(sysVal & bq796x0_ADC_EN)
@@ -53,7 +64,10 @@ bool BQ76940::initBQ(byte irqPin)
 
   DEBUG_PRINT1("\n");
 
-  DEBUG_PRINTLN1("// Coulomb Counter \\");
+
+  // ------------------------------ Enabling coulomb counter --------------------------------------//
+
+  DEBUG_PRINTLN1("// Coulomb Counter \\\\");
   //Enable countinous reading of the Coulomb Counter
   sysVal = driver->registerRead(bq796x0_SYS_CTRL2);
   sysVal |= bq796x0_CC_EN; //Set the CC_EN bit
@@ -64,21 +78,19 @@ bool BQ76940::initBQ(byte irqPin)
 
   DEBUG_PRINT1("\n");
 
-  //Attach interrupt
+
+
+
+  // ------------------------------ Configuring interruption --------------------------------------//
+
   pinMode(irqPin, INPUT); //No pull up
   attachInterrupt(digitalPinToInterrupt(irqPin), bq769x0IRQ, RISING);
-  //Only for arduino UNO -- Raspberry pi pico accept any GPIO pin as interrupt
-  /*if(irqPin == 2)
-    //Interrupt zero on Uno is pin 2
-    attachInterrupt(0, bq769x0IRQ, RISING);
-  else if (irqPin == 3)
-    //Interrupt one on Uno is pin 3
-    attachInterrupt(1, bq769x0IRQ, RISING);
-  else
-    DEBUG_PRINTLN1("irqPin invalid. Alert IRQ not enabled.");
-  */
+  this->irqPin = irqPin;
+  
 
-  DEBUG_PRINTLN1("// Gain and Offset \\");
+  // ------------------------------ Getting voltage gain and offset for voltage read --------------------------------------//
+
+  DEBUG_PRINTLN1("// Gain and Offset \\\\");
   //Gain and offset are used in multiple functions
   //Read these values into global variables
   gain = readGAIN() / (float)1000; //Gain is in uV so this converts it to mV. Example: 0.370mV/LSB
@@ -93,6 +105,9 @@ bool BQ76940::initBQ(byte irqPin)
   DEBUG_PRINTLN1("mV");
 
   DEBUG_PRINT1("\n");
+
+
+  // ------------------------------ Reset system faults --------------------------------------//
 
   //Read the system status register
   byte sysStat = driver->registerRead(bq796x0_SYS_STAT);
@@ -111,7 +126,72 @@ bool BQ76940::initBQ(byte irqPin)
     }
   }
 
-  DEBUG_PRINTLN1("// Trip voltages \\");
+  //Ressetting SYS_STAT
+  driver->registerWrite(bq796x0_SYS_STAT, driver->registerRead(bq796x0_SYS_STAT));
+
+  DEBUG_PRINT1("\n");
+
+
+
+  this->setRSNNS(0);
+
+
+  // ------------------------------ Settin SC trip and delay --------------------------------------//
+
+  DEBUG_PRINTLN1("// SC trip and delay \\\\");
+
+  this->scd = scd;
+  this->sct = sct;
+  this->setSCdelay(this->scd);
+  this->setSCtrip(this->sct);
+
+  DEBUG_PRINT1("SC trip set to: 0x");
+  DEBUG_PRINTLN2(this->getSCtrip(), HEX);
+
+  DEBUG_PRINT1("SC delay set to: 0x");
+  DEBUG_PRINTLN2(this->getSCdelay(), HEX);
+
+  DEBUG_PRINT1("\n");
+
+
+  // ------------------------------ Settin SC trip and delay --------------------------------------//
+
+  DEBUG_PRINTLN1("// OC trip and delay \\\\");
+
+  this->ocd = ocd;
+  this->oct = oct;
+  this->setOCdelay(this->ocd);
+  this->setOCtrip(this->oct);
+
+  DEBUG_PRINT1("OC trip set to: 0x");
+  DEBUG_PRINTLN2(this->getOCtrip(), HEX);
+
+  DEBUG_PRINT1("OC delay set to: 0x");
+  DEBUG_PRINTLN2(this->getOCdelay(), HEX);
+
+  DEBUG_PRINT1("\n");
+
+
+  // ------------------------------ Settin OV and UV delay --------------------------------------//
+
+  DEBUG_PRINTLN1("// UV and OV delay \\\\");
+
+  this->uvd = uvd;
+  this->ovd = ovd;
+  this->setOVdelay(this->ovd);
+  this->setUVdelay(this->uvd);
+
+  DEBUG_PRINT1("OV delay set to: 0x");
+  DEBUG_PRINTLN2(this->getOVdelay(), HEX);
+
+  DEBUG_PRINT1("UV delay set to: 0x");
+  DEBUG_PRINTLN2(this->getUVdelay(), HEX);
+
+  DEBUG_PRINT1("\n");
+
+  // ------------------------------ Settin OV and UV trip --------------------------------------//  
+
+  DEBUG_PRINTLN1("// Trip voltages \\\\");
   //Set any other settings such as OVTrip and UVTrip limits
   float under = readUVtrip();
   float over = readOVtrip();
@@ -124,24 +204,24 @@ bool BQ76940::initBQ(byte irqPin)
   DEBUG_PRINT1(over);
   DEBUG_PRINTLN1("V");
 
-  if(under != 3.13)
+  if(under != uvTrip)
   {
-    writeUVtrip(3.13); //Set undervoltage to 3.32V
+    writeUVtrip(uvTrip); //Set undervoltage to 3.32V
+    this->UV_trip = uvTrip; 
     DEBUG_PRINT1("New undervoltage trip: ");
     DEBUG_PRINT1(readUVtrip());
     DEBUG_PRINTLN1("V"); //should print 3.32V
   }
 
-  if(over != 4.27)
+  if(over != ovTrip)
   {
-    writeOVtrip(4.27); //Set overvoltage to 4.27V
+    writeOVtrip(ovTrip); //Set overvoltage to 4.27V
+    this->OV_trip = ovTrip;
     DEBUG_PRINT1("New overvoltage trip: ");
     DEBUG_PRINT1(readOVtrip());
     DEBUG_PRINTLN1("V"); //should print 4.27V
   }
 
-  //Ressetting SYS_STAT
-  driver->registerWrite(bq796x0_SYS_STAT, driver->registerRead(bq796x0_SYS_STAT));
 
   DEBUG_PRINT1("\n");
   return true;
@@ -150,8 +230,57 @@ bool BQ76940::initBQ(byte irqPin)
 //-------------------------------------------------------- init bq function end ----------------------------------------- //
 
 
+//-------------------------------------------------------- deal interruption begin ----------------------------------------- //
 
+// void BQ76940::dealInterruption()
+// {
+//   if (!bq769x0_IRQ_Triggered) return;
 
+//   bq769x0_IRQ_Triggered = false;
+
+//   byte SS = driver->registerRead(bq796x0_SYS_STAT);
+
+//   if (testBit(SS, bq796x0_DEVICE_XREADY)){
+
+//     this->initBQ(this->irqPin);
+//     //this->resetSysStatBit(bq796x0_DEVICE_XREADY);
+//     Serial.println("DEVICE_XREADY_FAULT");
+//   }
+
+//   if (testBit(SS, bq796x0_CC_READY)){
+//     this->readCurrent();
+//     //this->resetSysStatBit(bq796x0_CC_READY);
+//     Serial.println("CC_READY");
+//   }
+
+//   if (testBit(SS, bq796x0_UV)){
+
+//     Serial.println("UV_FAULT");
+//   }
+
+//   if (testBit(SS, bq796x0_OV)){
+
+//     Serial.println("OV_FAULT");
+//   }
+  
+//   if (testBit(SS, bq796x0_SCD)){
+    
+//     Serial.println("SHORTCUT_FAULT");
+//   }
+
+//   if (testBit(SS, bq796x0_OCD)){
+
+//     Serial.println("OC_FAULT");
+//   }
+
+//   driver->registerWrite(bq796x0_SYS_STAT, SS);
+
+//   if (digitalRead(this->irqPin)) 
+//     bq769x0_IRQ_Triggered = true;
+
+// }
+
+//-------------------------------------------------------- deal interruption end ----------------------------------------- //
 
 
 //-------------------------------------------------------- read gain function  ----------------------------------------- //
@@ -357,7 +486,7 @@ float BQ76940::readCellVoltage(byte cellNumber)
   DEBUG_PRINT1("register: 0x");
   DEBUG_PRINTLN2(registerNumber, HEX);
 
-  int cellValue = driver->registerDoubleRead(registerNumber);
+  int cellValue = (int)driver->registerDoubleRead(registerNumber);
 
   //int cellValue = 0x1800; //6,144 - Should return 2.365
   //int cellValue = 0x1F10l; //Should return 3.052
@@ -418,7 +547,7 @@ int BQ76940::readTemp(byte thermistorNumber) //Não está lendo os registradores
     DEBUG_PRINTLN1(thermistorNumber);
     DEBUG_PRINT1("Este é o meu registernumber");
     DEBUG_PRINTLN1(registerNumber);
-    int thermValue = driver->registerDoubleRead(registerNumber);
+    int thermValue = (int)driver->registerDoubleRead(registerNumber);
 
     float thermVoltage = thermValue * (float)382;
     thermVoltage /= (float)1000000;
@@ -438,7 +567,7 @@ int BQ76940::readTemp(byte thermistorNumber) //Não está lendo os registradores
       delay(2000);      
     }
 
-    int thermValue = driver->registerDoubleRead(bq796x0_TS1_HI);
+    int thermValue = (int)driver->registerDoubleRead(bq796x0_TS1_HI);
     float thermVoltage = thermValue * (float)382;
     thermVoltage /= (float)1000000;
 
@@ -486,7 +615,8 @@ int BQ76940::thermistorLookup(float resistance)
 
 //-------------------------------------------------------- Read the current begin  ---------------------------------------------------------- //
 
-void BQ76940::setCConeshot(){
+void BQ76940::setCConeshot()
+{
   byte buff = driver->registerRead(bq796x0_SYS_CTRL2);
 
   resetBit(buff, bq796x0_CC_EN);
@@ -498,14 +628,14 @@ void BQ76940::setCConeshot(){
 
 void BQ76940::readCurrent()
 {
-  if (!bq769x0_IRQ_Triggered) return;
+  //if (!bq769x0_IRQ_Triggered) return;
 
-  if (!testBit(driver->registerRead(bq796x0_SYS_STAT), bq796x0_CC_READY)) return;
+  //if (!testBit(driver->registerRead(bq796x0_SYS_STAT), bq796x0_CC_READY)) return;
 
-  this->resetSysStatBit(bq796x0_CC_READY);
+  //this->resetSysStatBit(bq796x0_CC_READY);
 
-  if (!driver->registerRead(bq796x0_SYS_STAT))
-    bq769x0_IRQ_Triggered = false;
+  // if (!driver->registerRead(bq796x0_SYS_STAT))
+  //   bq769x0_IRQ_Triggered = false;
 
   int16_t rawVoltage = (int16_t)driver->registerDoubleRead(bq796x0_CC_HI);
   Serial.print("Raw voltage: ");
@@ -526,7 +656,8 @@ void BQ76940::readCurrent()
 
 //-------------------------------------------------------- get methods begin  ---------------------------------------------------------- //
 
-float BQ76940::getCurrent(){
+float BQ76940::getCurrent()
+{
   return this->current;
 }
 
@@ -547,14 +678,233 @@ byte  BQ76940::getOCdelay()
 
 byte BQ76940::getSCdelay()
 {
-  return 0x07 & (driver->registerRead(bq796x0_PROTECT2) >> 3); // Return bits 5, 4 and 3 
+  return 0x07 & (driver->registerRead(bq796x0_PROTECT1) >> 3); // Return bits 5, 4 and 3 
 }
 
+float BQ76940::getBatteryPack()
+{
+  return 4 * this->gain * driver->registerDoubleRead(bq796x0_BAT_HI) + (this->offset * CELLS_IN_USE);
+}
+
+byte BQ76940::getOVdelay()
+{
+  return (0x30 & driver->registerRead(bq796x0_PROTECT3)) >> 4; // Return bits 5 and 4 from the register
+}
+
+byte BQ76940::getUVdelay()
+{
+  return driver->registerRead(bq796x0_PROTECT3) >> 6; // Return bits 7 and 6 from the register
+}
+
+
+float BQ76940::getSCtripCurrent(SCthresh thr)
+{
+
+  float ret = 0.0;
+  switch (thr) {
+
+  case SCthresh::SCT_22mv:
+    ret = (float)22/shunt;
+    break;
+
+  case SCthresh::SCT_33mv:
+    ret = (float)33/shunt;
+    break;
+
+  case SCthresh::SCT_44mv:
+    ret = (float)44/shunt;
+    break;
+
+  case SCthresh::SCT_56mv:
+    ret = (float)56/shunt;
+    break;
+
+  case SCthresh::SCT_67mv:
+    ret = (float)67/shunt;
+    break;
+
+  case SCthresh::SCT_78mv:
+    ret = (float)78/shunt;
+    break;
+
+  case SCthresh::SCT_89mv:
+    ret = (float)89/shunt;
+    break;
+
+  case SCthresh::SCT_100mv:
+    ret = (float)100/shunt;
+    break;
+  }
+  
+  if (this->getRSNNS())
+    return 2*ret;
+  else
+    return ret;
+}
+
+float BQ76940::getOCtripCurrent(OCthresh thr)
+{
+  float ret = 0.0;
+  switch (thr) {
+
+  case OCthresh::OCT_8mv:
+    ret = (float)8/shunt;
+    break;
+
+  case OCthresh::OCT_11mv:
+    ret = (float)11/shunt;
+    break;
+
+  case OCthresh::OCT_14mv:
+    ret = (float)14/shunt;
+    break;
+
+  case OCthresh::OCT_17mv:
+    ret = (float)17/shunt;
+    break;
+
+  case OCthresh::OCT_19mv:
+    ret = (float)19/shunt;
+    break;
+
+  case OCthresh::OCT_22mv:
+    ret = (float)22/shunt;
+    break;
+
+  case OCthresh::OCT_25mv:
+    ret = (float)25/shunt;
+    break;
+
+  case OCthresh::OCT_28mv:
+    ret = (float)28/shunt;
+    break;
+
+  case OCthresh::OCT_31mv:
+    ret = (float)31/shunt;
+    break;
+
+  case OCthresh::OCT_33mv:
+    ret = (float)33/shunt;
+    break;
+  }
+  
+  if (this->getRSNNS())
+    return 2*ret;
+  else
+    return ret;
+}
+
+byte BQ76940::getRSNNS()
+{
+  return this->RSNNS;
+}
+
+uint8_t BQ76940::getLowerCell()
+{
+  uint8_t lowerCell = cellVoltage[1];
+  for(int i = 1 ; i < NUMBER_OF_CELLS+1 ; i++){
+      if (cellVoltage[i] < 1)
+        continue;
+      if (cellVoltage[i] < lowerCell)
+        lowerCell = cellVoltage[i];
+    }
+  return lowerCell;
+}
+
+uint8_t BQ76940::getHigherCell()
+{
+  uint8_t higherCell = cellVoltage[1];
+  for(int i = 1 ; i < NUMBER_OF_CELLS+1 ; i++){
+      if (cellVoltage[i] < 1)
+        continue;
+      if (cellVoltage[i] > higherCell)
+        higherCell = cellVoltage[i];
+    }
+  return higherCell;
+}
 //-------------------------------------------------------- get methods end  ---------------------------------------------------------- //
 
 
 //-------------------------------------------------------- set methods begin  ---------------------------------------------------------- //
 
+void BQ76940::setOCtrip(OCthresh threshold)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT2);
+
+  buff &= 0xF0;
+  buff |= threshold;
+
+  driver->registerWrite(bq796x0_PROTECT2, buff);
+}
+
+void BQ76940::setSCtrip(SCthresh threshold)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT1);
+
+  buff &= 0xF8;
+  buff |= threshold;
+
+  driver->registerWrite(bq796x0_PROTECT1, buff);
+}
+
+void BQ76940::setOCdelay(OCdelay delay)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT2);
+
+  buff &= 0x8F;
+
+  buff |= (delay << 4);
+
+  driver->registerWrite(bq796x0_PROTECT2, buff);
+}
+
+void BQ76940::setSCdelay(SCdelay delay)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT1);
+
+  buff &= 0xE7;
+
+  buff |= (delay << 3);
+
+  driver->registerWrite(bq796x0_PROTECT1, buff);
+}
+
+void BQ76940::setOVdelay(OVdelay delay)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT3);
+
+  buff &= 0xCF;
+
+  buff |= (delay << 4);
+
+  driver->registerWrite(bq796x0_PROTECT3, buff);
+}
+
+void BQ76940::setUVdelay(UVdelay delay)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT3);
+
+  buff &= 0x3F;
+
+  buff |= (delay << 6);
+
+  driver->registerWrite(bq796x0_PROTECT3, buff);
+}
+
+void BQ76940::setRSNNS(bool value)
+{
+  byte buff = driver->registerRead(bq796x0_PROTECT1);
+
+  if (value){
+    setBit(buff, 1<<7);
+    this->RSNNS = 1;
+  } else {
+    this->RSNNS = 0;
+    resetBit(buff, 1 <<7);
+  }
+
+  driver->registerWrite(bq796x0_PROTECT1, buff);
+}
 //-------------------------------------------------------- set methods end  ---------------------------------------------------------- //
 
 //-------------------------------------------------------- interrupt function  ----------------------------------------------------------- //
