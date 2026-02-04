@@ -27,6 +27,7 @@ BQ76940::BQ76940(pin_size_t SDA, pin_size_t SCL)
 bool BQ76940::initBQ(byte irqPin, SCthresh sct, SCdelay scd, OCthresh oct, OCdelay ocd, OVdelay ovd, UVdelay uvd, float ovTrip, float uvTrip)
 {
 
+
   
   // ------------------------------ Test to see if we have correct I2C communication --------------------------------------//
 
@@ -224,6 +225,20 @@ bool BQ76940::initBQ(byte irqPin, SCthresh sct, SCdelay scd, OCthresh oct, OCdel
 
 
   DEBUG_PRINT1("\n");
+
+
+  // ------------------------------ Reset BQ states --------------------------------------//
+
+  this->OVstate = BQstates::OK;
+  this->UVstate = BQstates::OK;
+  this->SCstate = BQstates::OK;
+  this->OCstate = BQstates::OK;
+
+
+  // ------------------------------ Open FETs to begin operation --------------------------------------// 
+  this->activateFETs(CHG_FET);
+  this->activateFETs(DCG_FET);
+
   return true;
 }
 
@@ -232,53 +247,91 @@ bool BQ76940::initBQ(byte irqPin, SCthresh sct, SCdelay scd, OCthresh oct, OCdel
 
 //-------------------------------------------------------- deal interruption begin ----------------------------------------- //
 
-// void BQ76940::dealInterruption()
-// {
-//   if (!bq769x0_IRQ_Triggered) return;
+void BQ76940::dealInterruption()
+{
+  if (!bq769x0_IRQ_Triggered) return;
 
-//   bq769x0_IRQ_Triggered = false;
+  bq769x0_IRQ_Triggered = false;
 
-//   byte SS = driver->registerRead(bq796x0_SYS_STAT);
+  byte SS = driver->registerRead(bq796x0_SYS_STAT);
 
-//   if (testBit(SS, bq796x0_DEVICE_XREADY)){
 
-//     this->initBQ(this->irqPin);
-//     //this->resetSysStatBit(bq796x0_DEVICE_XREADY);
-//     Serial.println("DEVICE_XREADY_FAULT");
-//   }
+  //! Reescrever essa parte
+  if (testBit(SS, bq796x0_DEVICE_XREADY)){
 
-//   if (testBit(SS, bq796x0_CC_READY)){
-//     this->readCurrent();
-//     //this->resetSysStatBit(bq796x0_CC_READY);
-//     Serial.println("CC_READY");
-//   }
+    this->initBQ(this->irqPin, this->sct, this->scd, this->oct, this->ocd, this->ovd, this->uvd, this->OV_trip, this->UV_trip);
+    //this->resetSysStatBit(bq796x0_DEVICE_XREADY);
+    Serial.println("DEVICE_XREADY_FAULT");
+  }
 
-//   if (testBit(SS, bq796x0_UV)){
+  if (testBit(SS, bq796x0_CC_READY)){
+    this->readCurrent();
+    // TODO - Numerical integration
+    Serial.println("CC_READY");
+  }
 
-//     Serial.println("UV_FAULT");
-//   }
+  if (testBit(SS, bq796x0_UV)){
 
-//   if (testBit(SS, bq796x0_OV)){
+    if (this->UVstate == BQstates::OK){
+      resetBit(SS, bq796x0_UV);
+      this->UVstate = BQstates::FAULT;
+    }
 
-//     Serial.println("OV_FAULT");
-//   }
+    if (this->UVstate == BQstates::FAULT){
+      float voltage = this->readCellVoltage(this->getLowerCell());
+      if (voltage > 1.05 * this->UV_trip){
+        setBit(SS, bq796x0_UV);
+        this->activateFETs(DCG_FET); // must not be located here
+        this->UVstate = BQstates::OK;
+      }
+    }
+
+    Serial.println("UV_FAULT");
+  }
+
+  if (testBit(SS, bq796x0_OV)){
+
+
+    // If OV is detected and it was previously OK,
+    // enter FAULT state and does not try to reset 
+    // SYS_STAT OV bit.
+    if (this->OVstate == BQstates::OK){
+      resetBit(SS, bq796x0_OV);
+      this->OVstate = BQstates::FAULT;
+    }
+
+    // If OV is detected and it was previously FAULT,
+    // read the higher cell value and if it is not 
+    // at least 5% lower that trip voltage FAULT state continues.
+    if (this->OVstate == BQstates::FAULT){
+      float voltage = this->readCellVoltage(this->getHigherCell());
+      if (voltage < 0.95 * this->OV_trip){
+        setBit(SS, bq796x0_OV);
+        this->activateFETs(CHG_FET); // must not be located here
+        this->OVstate = BQstates::OK;
+      }
+    }
+
+    Serial.println("OV_FAULT");
+  }
   
-//   if (testBit(SS, bq796x0_SCD)){
+  if (testBit(SS, bq796x0_SCD)){
     
-//     Serial.println("SHORTCUT_FAULT");
-//   }
+    Serial.println("SHORTCUT_FAULT");
+  }
 
-//   if (testBit(SS, bq796x0_OCD)){
+  if (testBit(SS, bq796x0_OCD)){
 
-//     Serial.println("OC_FAULT");
-//   }
+    Serial.println("OC_FAULT");
+  }
 
-//   driver->registerWrite(bq796x0_SYS_STAT, SS);
+  driver->registerWrite(bq796x0_SYS_STAT, SS);
 
-//   if (digitalRead(this->irqPin)) 
-//     bq769x0_IRQ_Triggered = true;
 
-// }
+  if (digitalRead(this->irqPin)) 
+    bq769x0_IRQ_Triggered = true;
+
+}
 
 //-------------------------------------------------------- deal interruption end ----------------------------------------- //
 
@@ -907,6 +960,17 @@ void BQ76940::setRSNNS(bool value)
 }
 //-------------------------------------------------------- set methods end  ---------------------------------------------------------- //
 
+
+void BQ76940::activateFETs(bool fet){
+  byte buff = driver->registerRead(bq796x0_SYS_CTRL2);
+
+  (fet == CHG_FET) ? setBit(buff, bq796x0_CHG_ON) : setBit(buff, bq796x0_DSG_ON);
+
+  driver->registerWrite(bq796x0_SYS_CTRL2, buff);
+}
+
+
+
 //-------------------------------------------------------- interrupt function  ----------------------------------------------------------- //
 
 // this is irq handler for bq769x0 interrupts, has to return void and take no arguments
@@ -916,3 +980,4 @@ void bq769x0IRQ()
   bq769x0_IRQ_Triggered = true;
 }
 //-------------------------------------------------------- interrupt function end ----------------------------------------------------------- //
+

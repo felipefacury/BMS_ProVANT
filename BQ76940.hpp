@@ -37,6 +37,11 @@ class BQ76940{
     float OV_trip; //Trheshold before Overvoltage cut
     float UV_trip; //Trheshold before Undervoltage cut
 
+    BQstates OVstate;
+    BQstates UVstate;
+    BQstates SCstate;
+    BQstates OCstate;
+
     byte RSNNS = 0;
 
     byte tripCalculator(float tripVoltage);
@@ -75,6 +80,8 @@ class BQ76940{
 
     
     void dealInterruption();
+
+    void activateFETs(bool fet);
     
 
     float getCurrent();

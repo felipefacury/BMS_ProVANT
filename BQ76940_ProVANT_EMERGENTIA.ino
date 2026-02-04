@@ -53,7 +53,7 @@ void setup()
   DEBUG_PRINTLN1("vamos vamos a testar");
   DEBUG_PRINTLN1("bq76940 example");
  
-  bq = new BQ76940(0, 1);
+  bq = new BQ76940(_SDA_ , _SCL_);
 
   delay(5000);
   pinMode(statLED, OUTPUT);

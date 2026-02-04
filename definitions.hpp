@@ -235,6 +235,12 @@ inline uint8_t operator==(uint8_t val, UVdelay e) {
     return val == static_cast<uint8_t>(e);
 }
 
+
+enum class BQstates : byte{
+    OK,
+    FAULT
+};
+
 // ----------------------------------------- ENUMERATIONS END  ------------------------------------------------ //
 
 
@@ -245,5 +251,8 @@ inline uint8_t operator==(uint8_t val, UVdelay e) {
 #define NUMBER_OF_CELLS 15 // Although ProVant Emergentia has only 12 cells, all the IC pins are required in order to operate properly. On the readings, ignore cells 4, 9 and 14, they are short circuited.
 
 #define CELLS_IN_USE 12
+
+#define DCG_FET 0
+#define CHG_FET 1
 
 #endif
